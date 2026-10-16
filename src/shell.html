@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Eommu</title>
+<meta name="description" content="Eommu is a tasks and daily schedule app that works offline and keeps everything on your device.">
+<meta name="theme-color" content="#d7dadb">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Eommu">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<script>
+/* set the theme before first paint so dark mode never flashes light */
+try {
+  var s = JSON.parse(localStorage.getItem('eommu.v1') || '{}'), t = s.settings && s.settings.theme;
+  var dark = t === 'dark' || ((!t || t === 'system') && window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches);
+  document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+} catch (e) {}
+</script>
+<style>
+/*__CSS__*/
+</style>
+</head>
+<body>
+<div id="app"><div class="stage"><main id="main" class="main" tabindex="-1"></main></div></div>
+<div id="toasts" role="status" aria-live="polite"></div>
+<noscript><p style="padding:24px;font:16px sans-serif">Eommu needs JavaScript to run. Nothing is sent anywhere: your tasks stay on this device.</p></noscript>
+<script>
+/*__JS__*/
+</script>
+</body>
+</html>
