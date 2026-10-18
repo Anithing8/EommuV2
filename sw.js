@@ -1,5 +1,5 @@
 /* Eommu service worker: the whole app is cached, so it opens and works with no connection. */
-const VERSION = '9865efe965';
+const VERSION = 'db9626312d';
 const CACHE = 'eommu-' + VERSION;
 const SHELL = ['./', './index.html', './manifest.webmanifest', './icons/icon.svg', './icons/icon-192.png', './icons/icon-512.png', './icons/icon-maskable-512.png', './icons/apple-touch-icon.png'];
 

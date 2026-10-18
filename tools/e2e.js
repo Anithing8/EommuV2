@@ -156,7 +156,9 @@ const L_nextDay = (d) => { const x = new Date(d + 'T12:00:00'); x.setDate(x.getD
   const cid = await chip.getAttribute('data-id');
   const fromHour = +(await chip.evaluate((el) => el.closest('.slot').dataset.hour));
   const fromDate = await chip.evaluate((el) => el.closest('.slot').dataset.date);
-  const target = page.locator(`.slot[data-hour="${fromHour + 2}"][data-date="${L_nextDay(fromDate)}"]`);
+  // the day after, or the day before when the week ends there (the test must pass on any weekday)
+  const toDate = (await page.locator(`.slot[data-date="${L_nextDay(fromDate)}"]`).count()) ? L_nextDay(fromDate) : await page.evaluate((d) => L.addDays(d, -1), fromDate);
+  const target = page.locator(`.slot[data-hour="${fromHour + 2}"][data-date="${toDate}"]`);
   await target.scrollIntoViewIfNeeded();
   await chip.scrollIntoViewIfNeeded();
   const cb = await chip.boundingBox();
@@ -165,13 +167,14 @@ const L_nextDay = (d) => { const x = new Date(d + 'T12:00:00'); x.setDate(x.getD
   await page.mouse.move(cb.x + cb.width / 2 + 12, cb.y + cb.height / 2 + 12, { steps: 3 });
   const tb2 = await target.boundingBox();
   await page.mouse.move(tb2.x + tb2.width / 2, tb2.y + tb2.height * 0.6, { steps: 8 });
-  await page.mouse.up();
+  await page.mouse.up(); await page.waitForTimeout(150);
   s = await st();
   const moved = s.tasks.find((t) => t.id === cid);
-  ok(moved.dueTime && moved.dueTime.startsWith(String(fromHour + 2).padStart(2, '0') + ':') && moved.dueDate === L_nextDay(fromDate), `dragging a chip changed its slot to ${moved.dueDate} ${moved.dueTime}`);
+  ok(moved.dueTime && moved.dueTime.startsWith(String(fromHour + 2).padStart(2, '0') + ':') && moved.dueDate === toDate, `dragging a chip changed its slot to ${moved.dueDate} ${moved.dueTime}`);
 
   console.log('widget, theme, sidebar mode');
   await page.locator('.nav-item', { hasText: 'Quick focus' }).click();
+  await page.waitForSelector('.lcd .pct');
   ok(await page.locator('.lcd .pct').count() === 1 && await page.locator('.leds i').count() === 20, 'widget shows percent and segmented bar');
   await page.screenshot({ path: SP + '/e2e-widget.png' });
   await page.locator('.side-foot .seg button').nth(2).click();
@@ -190,8 +193,10 @@ const L_nextDay = (d) => { const x = new Date(d + 'T12:00:00'); x.setDate(x.getD
   await page.locator('dialog input[aria-label="Source label"]').fill('Email from Sam');
   await page.locator('dialog input[aria-label="Source link"]').fill('example.com/mail/1');
   await page.locator('dialog .key.primary').click();
+  await page.waitForSelector('dialog', { state: 'detached' });
   s = await st();
   const cap = s.tasks.find((t) => t.title === 'Reply to Sam');
+  if (!cap) console.log('DIAG', JSON.stringify({ titles: s.tasks.map((t) => t.title).slice(-6), toasts: await page.locator('.toast').allInnerTexts(), view: await page.evaluate(() => UI.view) }));
   ok(cap && cap.source.url === 'https://example.com/mail/1' && cap.source.label === 'Email from Sam', 'capture modal stores a source chip');
   ok(await page.locator(`.task[data-id="${cap.id}"] a.badge.src[target="_blank"]`).count() === 1, 'source chip renders as a link opening in a new tab');
 

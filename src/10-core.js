@@ -87,7 +87,7 @@ let S;                       // persisted data
 const UI = {                 // session-only view state
   view: 'board', presetId: null, cal: { date: null }, notesOpen: null, focusId: null,
   focusTitleId: null, fresh: null, reopenAdd: null, sidebarOpen: false, starDone: false,
-  orderCtx: {}, presetPane: 'list', lastAdd: {},
+  orderCtx: {}, presetPane: 'list',
 };
 
 function loadState() {
@@ -194,6 +194,15 @@ function toast(msg, { actions = [], ms, kind = '' } = {}) {
 }
 
 /* ---------- dialogs ---------- */
+/** Focus a field shortly after a dialog opens, unless the person has already started typing in another one. */
+function focusSoon(el, select = false) {
+  setTimeout(() => {
+    const a = document.activeElement;
+    if (a && a !== el && a.matches && a.matches('dialog input, dialog textarea, dialog select')) return;
+    el.focus();
+    if (select && el.select) el.select();
+  }, 30);
+}
 function openDialog({ title, body, actions = [], cls = '', onClose }) {
   const dlg = h('dialog', { class: `dlg ${cls}` });
   let closed = false;

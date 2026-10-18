@@ -15,8 +15,15 @@ function sourceChip(src) {
     icon('link'), h('span', { class: 'tx' }, label));
 }
 
-function dateBadges(t, today) {
+function dateBadges(t, today, mode = 'board') {
   const out = [];
+  const listDate = !t.dueDate && !t.isCompleted ? (L.getList(S, t.listId) || {}).dueDate : null;
+  if (listDate && (listDate < today || mode !== 'board')) {
+    // the date comes from the list: only worth a badge when it is late, or in views that mix lists
+    const past = listDate < today;
+    out.push(h('span', { class: `badge date inh${past ? ' late' : ''}`, title: 'This task follows the date of its list' },
+      past ? h('i', { class: 'led' }) : icon('cal'), past ? h('b', {}, 'Past due') : null, dateLabel(listDate, today)));
+  }
   if (t.dueDate) {
     const past = !t.isCompleted && t.dueDate < today;
     out.push(h('button', {
@@ -167,7 +174,7 @@ function taskRow(t, o = {}) {
     meta.push(h('button', { class: 'badge rep', type: 'button', title: 'Change repeat', onclick: (e) => { e.stopPropagation(); openTaskSheet(t.id, { focus: 'repeat' }); } },
       icon('repeat'), repeatLabel(t.recur)));
   }
-  meta.unshift(...dateBadges(t, today));
+  meta.unshift(...dateBadges(t, today, mode));
   if (t.source) meta.push(sourceChip(t.source));
   if (kids.length) {
     const d = kids.filter((k) => k.isCompleted).length;
@@ -238,13 +245,13 @@ function addRow(list) {
         addTask(list.id, v);
         UI.reopenAdd = list.id;
         commit();
-      } else if (e.key === 'Escape') { e.preventDefault(); done = true; UI.lastAdd[list.id] = null; holder.replaceChildren(btn()); }
+      } else if (e.key === 'Escape') { e.preventDefault(); done = true; holder.replaceChildren(btn()); }
     });
     ta.addEventListener('blur', () => {
       if (done) return;
       const v = ta.value.trim();
-      if (v) { addTask(list.id, v); UI.lastAdd[list.id] = null; done = true; save(); deferRender(); }
-      else { UI.lastAdd[list.id] = null; holder.replaceChildren(btn()); }
+      if (v) { addTask(list.id, v); done = true; save(); deferRender(); }
+      else { holder.replaceChildren(btn()); }
     });
     holder.replaceChildren(wrap);
     ta.focus();

@@ -65,10 +65,10 @@ const L = (() => {
 
   const str = (v, max = 4000) => (typeof v === 'string' ? v.slice(0, max) : '');
 
-  L.newList = (state, name, isDefault = false) => {
+  L.newList = (state, name, isDefault = false, dueDate = null) => {
     const list = {
       id: L.uid('l'), name: name || 'Untitled list', isDefault, sort: 'manual', visible: true,
-      completedOpen: false, color: state.lists.length % LIST_COLORS,
+      completedOpen: false, color: state.lists.length % LIST_COLORS, dueDate: L.isDate(dueDate) ? dueDate : null,
       order: state.lists.reduce((m, l) => Math.max(m, l.order || 0), -1) + 1,
     };
     state.lists.push(list);
@@ -77,6 +77,17 @@ const L = (() => {
 
   L.defaultList = (state) => state.lists.find((l) => l.isDefault) || state.lists[0];
   L.getList = (state, id) => state.lists.find((l) => l.id === id);
+
+  /**
+   * A list can be "for a day" (list.dueDate). Its tasks and subtasks that have no date of their
+   * own count as due that day: in the calendar, Today & overdue and the widget. A task's own
+   * date always wins. The clock time of a task only exists together with its own date.
+   */
+  L.dueOf = (state, t) => t.dueDate || ((L.getList(state, t.listId) || {}).dueDate) || null;
+  L.dueMap = (state) => {
+    const m = new Map(state.lists.map((l) => [l.id, l.dueDate || null]));
+    return (t) => t.dueDate || m.get(t.listId) || null;
+  };
   L.getTask = (state, id) => state.tasks.find((t) => t.id === id);
   L.getPreset = (state, id) => state.presets.find((p) => p.id === id);
 
@@ -282,8 +293,8 @@ const L = (() => {
 
   /* ---------- views and sorting ---------- */
   const timeKey = (t) => (t.dueTime ? t.dueTime : '');
-  const dueCmp = (a, b) => {
-    const da = a.dueDate || '9999-99-99', db = b.dueDate || '9999-99-99';
+  const dueCmpWith = (E) => (a, b) => {
+    const da = E(a) || '9999-99-99', db = E(b) || '9999-99-99';
     if (da !== db) return da < db ? -1 : 1;
     // all-day first, then clock times
     const ta = timeKey(a), tb = timeKey(b);
@@ -291,9 +302,10 @@ const L = (() => {
     return a.order - b.order;
   };
 
-  const effectiveDue = (parent, kids) => {
-    if (parent.dueDate) return parent;
-    const dated = kids.filter((k) => k.dueDate).sort(dueCmp);
+  /** The task (parent or its earliest dated subtask) that decides where a parent sits by date. */
+  const effectiveDue = (E, cmp, parent, kids) => {
+    if (E(parent)) return parent;
+    const dated = kids.filter((k) => E(k)).sort(cmp);
     return dated[0] || parent;
   };
 
@@ -315,6 +327,7 @@ const L = (() => {
    * a completed subtask of an open parent stands alone with a crumb naming the parent)
    */
   L.listView = (state, list, today = L.today()) => {
+    const E = L.dueMap(state), dueCmp = dueCmpWith(E);
     const mine = state.tasks.filter((t) => t.listId === list.id);
     const parents = mine.filter((t) => !t.parentId);
     const kidsOf = (id) => mine.filter((t) => t.parentId === id);
@@ -334,8 +347,8 @@ const L = (() => {
       case 'due': {
         const map = new Map(BUCKETS.map(([k]) => [k, []]));
         units.forEach((u) => {
-          const eff = effectiveDue(u.task, u.kids);
-          map.get(L.dueBucket(eff.dueDate, today)).push({ u, eff });
+          const eff = effectiveDue(E, dueCmp, u.task, u.kids);
+          map.get(L.dueBucket(E(eff), today)).push({ u, eff });
         });
         sections = BUCKETS.map(([key, label]) => ({
           key, label,
@@ -370,11 +383,12 @@ const L = (() => {
 
   /** Uncompleted tasks and subtasks due today or earlier, across every list. */
   L.todayView = (state, today = L.today()) => {
-    const hit = state.tasks.filter((t) => !t.isCompleted && t.dueDate && t.dueDate <= today);
-    const sorted = hit.sort(dueCmp);
+    const E = L.dueMap(state);
+    const hit = state.tasks.filter((t) => !t.isCompleted && E(t) && E(t) <= today);
+    const sorted = hit.sort(dueCmpWith(E));
     return {
-      past: sorted.filter((t) => t.dueDate < today),
-      today: sorted.filter((t) => t.dueDate === today),
+      past: sorted.filter((t) => E(t) < today),
+      today: sorted.filter((t) => E(t) === today),
       count: sorted.length,
     };
   };
@@ -391,8 +405,9 @@ const L = (() => {
 
   /** Progress for the quick widget: today's tasks plus anything overdue. */
   L.todayStats = (state, today = L.today()) => {
-    const dueToday = state.tasks.filter((t) => t.dueDate === today);
-    const overdue = state.tasks.filter((t) => !t.isCompleted && t.dueDate && t.dueDate < today);
+    const E = L.dueMap(state);
+    const dueToday = state.tasks.filter((t) => E(t) === today);
+    const overdue = state.tasks.filter((t) => !t.isCompleted && E(t) && E(t) < today);
     const done = dueToday.filter((t) => t.isCompleted).length;
     const total = dueToday.length + overdue.length;
     return { done, total, pct: total ? Math.round((done / total) * 100) : 0, overdue: overdue.length };
@@ -556,6 +571,7 @@ const L = (() => {
       if (!SORTS.includes(l.sort)) l.sort = 'manual';
       l.name = str(l.name, 120) || 'Untitled list';
       if (typeof l.color !== 'number') l.color = 0;
+      if (!L.isDate(l.dueDate)) l.dueDate = null;
       renumber(L.topLevel(state.tasks, (t) => t.listId === l.id));
     });
     state.tasks.filter((t) => !t.parentId).forEach((p) => renumber(L.childrenOf(state.tasks, p.id)));
@@ -591,7 +607,7 @@ const L = (() => {
     const s = L.blankState();
     s.lists = data.lists.filter((l) => l && typeof l.id === 'string').map((l) => ({
       id: l.id, name: l.name, isDefault: !!l.isDefault, sort: l.sort, visible: l.visible !== false,
-      completedOpen: !!l.completedOpen, color: l.color, order: l.order || 0,
+      completedOpen: !!l.completedOpen, color: l.color, order: l.order || 0, dueDate: l.dueDate,
     }));
     s.tasks = data.tasks.filter((t) => t && typeof t.id === 'string').map((t) => ({
       id: t.id, listId: t.listId, parentId: t.parentId || null, title: t.title, notes: t.notes,

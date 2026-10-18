@@ -125,7 +125,8 @@ function renderSidebar() {
           const col = $(`.col[data-list="${l.id}"]`);
           if (col) { col.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' }); col.classList.add('ping'); setTimeout(() => col.classList.remove('ping'), 900); }
         },
-      }, h('i', { class: `dot c${l.color % 6}` }), h('span', { class: 'lbl' }, l.name)),
+      }, h('i', { class: `dot c${l.color % 6}` }), h('span', { class: 'lbl' }, l.name),
+      l.dueDate ? h('span', { class: `ldate${l.dueDate < today && openCount(l) ? ' late' : ''}` }, dateLabel(l.dueDate, today)) : null),
       h('span', { class: 'count soft' }, openCount(l) || ''));
   });
 
@@ -168,10 +169,58 @@ function renderSidebar() {
   if (!scrim) $('#app').append(h('div', { class: 'scrim', onclick: () => { UI.sidebarOpen = false; applyLayout(); } }));
 }
 
+/** Quick picks that fill a date field. */
+function quickDays(dateInput) {
+  const today = L.today();
+  return h('div', { class: 'quick-days' }, [['Today', today], ['Tomorrow', L.addDays(today, 1)], ['Next week', L.addDays(today, 7)]].map(([label, d]) =>
+    h('button', { class: 'key small', type: 'button', onclick: () => { dateInput.value = d; dateInput.dispatchEvent(new Event('input')); } }, label)));
+}
+
+/** Give a list a day (or take it away). */
+function listDateDialog(listId) {
+  const l = L.getList(S, listId);
+  if (!l) return;
+  const date = h('input', { class: 'field', type: 'date', value: l.dueDate || '', a: { 'aria-label': 'List date' } });
+  openDialog({
+    title: `Date for “${l.name}”`, cls: 'small',
+    body: h('div', { class: 'form' },
+      h('p', { class: 'help' }, 'Make this a list for one day. Tasks in it that have no date of their own show on the calendar on that day, and in Today & overdue.'),
+      h('label', { class: 'fld' }, h('span', {}, 'Date'), date), quickDays(date)),
+    actions: [
+      { label: 'Cancel' },
+      l.dueDate ? { label: 'Clear date', kind: 'danger', onClick: () => { setListDate(l.id, null); } } : null,
+      { label: 'Save date', kind: 'primary', onClick: () => {
+        if (!L.isDate(date.value)) { toast('Pick a date, or use Clear date.'); date.focus(); return false; }
+        setListDate(l.id, date.value);
+      } },
+    ].filter(Boolean),
+  });
+}
+
 async function newListFlow() {
-  const name = await promptDialog({ title: 'New list', label: 'List name', confirmLabel: 'Create list', placeholder: 'Groceries' });
-  if (!name) return;
-  const l = addList(name);
+  const res = await new Promise((resolve) => {
+    let out = null;
+    const name = h('input', { class: 'field', type: 'text', maxLength: 120, placeholder: 'Groceries', a: { 'aria-label': 'List name' } });
+    const date = h('input', { class: 'field', type: 'date', a: { 'aria-label': 'List date (optional)' } });
+    const submit = () => {
+      const v = name.value.trim();
+      if (!v) { name.focus(); return false; }
+      out = { name: v, date: L.isDate(date.value) ? date.value : null };
+    };
+    const dlg = openDialog({
+      title: 'New list', cls: 'small',
+      body: h('div', { class: 'form' },
+        h('label', { class: 'fld' }, h('span', {}, 'List name'), name),
+        h('label', { class: 'fld' }, h('span', {}, 'Date (optional)'), date), quickDays(date),
+        h('p', { class: 'help' }, 'A dated list is for one day, for example a plan for Friday. Its tasks show on the calendar that day.')),
+      actions: [{ label: 'Cancel' }, { label: 'Create list', kind: 'primary', onClick: submit }],
+      onClose: () => resolve(out),
+    });
+    name.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); if (submit() !== false) dlg.close(); } });
+    name.focus();
+  });
+  if (!res) return;
+  const l = addList(res.name, res.date);
   setView('board');
   const col = $(`.col[data-list="${l.id}"]`);
   if (col) col.scrollIntoView({ inline: 'center', block: 'nearest' });
@@ -267,6 +316,7 @@ function listColumn(list, today) {
     class: 'ibtn quiet', type: 'button', title: 'List actions', a: { 'aria-label': `Actions for ${list.name}`, 'aria-haspopup': 'menu' },
     onclick: () => openMenu(menuBtn, [
       { label: 'Rename', icon: 'rename', onClick: () => { titleIn.focus(); titleIn.select(); } },
+      { label: list.dueDate ? 'Change list date…' : 'Set list date…', icon: 'cal', onClick: () => listDateDialog(list.id) },
       { label: 'Hide from board', icon: 'board', onClick: () => { list.visible = false; commit(); } },
       { sep: true },
       { label: list.isDefault ? 'Default list can’t be deleted' : 'Delete list', icon: 'trash', danger: true, disabled: list.isDefault, onClick: () => deleteList(list.id) },
@@ -280,7 +330,12 @@ function listColumn(list, today) {
     })))),
   }, icon('sort'), h('span', {}, sortNames[list.sort]));
 
+  const lateList = !!list.dueDate && list.dueDate < today && view.count > 0;
   const tools = h('div', { class: 'col-tools' },
+    list.dueDate ? h('button', {
+      class: `key small date-chip${lateList ? ' late' : ''}`, type: 'button', title: 'This list is for one day. Click to change it.',
+      onclick: () => listDateDialog(list.id),
+    }, lateList ? h('i', { class: 'led' }) : icon('cal'), dateLabel(list.dueDate, today)) : null,
     sortBtn,
     h('button', { class: 'key small', type: 'button', onclick: (e) => presetMenu(e.currentTarget, { listId: list.id }) }, icon('plus'), 'Load preset…'),
     h('button', {
@@ -289,7 +344,6 @@ function listColumn(list, today) {
     }, icon('save'), 'Save list as preset'));
 
   const body = h('div', { class: 'col-body', dataset: { list: list.id }, role: 'list', a: { 'aria-label': `${list.name} tasks` } });
-  body.append(addRow(list));
   view.sections.forEach((s) => {
     if (s.label) body.append(h('div', { class: `sec-head ${s.key}` }, h('span', {}, s.label), h('span', { class: 'count soft' }, s.units.length)));
     s.units.forEach((u) => body.append(taskUnit(u, { mode: 'board', drag: true, today })));
@@ -297,8 +351,9 @@ function listColumn(list, today) {
   if (!view.count) {
     body.append(h('div', { class: 'empty' },
       h('p', {}, view.completed.length ? 'All done here.' : 'Nothing here yet.'),
-      h('p', { class: 'sub' }, 'Add a task above, or load a preset to fill the day.')));
+      h('p', { class: 'sub' }, 'Add a task below, or load a preset to fill the day.')));
   }
+  body.append(addRow(list));
   body.append(completedDrawer(list, view));
 
   return h('section', { class: `col c${list.color % 6}`, dataset: { list: list.id }, a: { 'aria-label': list.name } },
@@ -382,7 +437,8 @@ function widgetView() {
   const today = L.today();
   const st = L.todayStats(S, today);
   const t = L.todayView(S, today);
-  const doneToday = S.tasks.filter((x) => x.dueDate === today && x.isCompleted)
+  const E = L.dueMap(S);
+  const doneToday = S.tasks.filter((x) => E(x) === today && x.isCompleted)
     .sort((a, b) => (b.completedAt || 0) - (a.completedAt || 0));
   const N = 20, lit = Math.round((st.pct / 100) * N);
   const segs = Array.from({ length: N }, (_, i) => h('i', { class: i < lit ? 'seg-on' : '' }));

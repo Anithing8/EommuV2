@@ -407,4 +407,73 @@ test('markup in titles survives as plain strings (the UI never uses innerHTML)',
   assert.equal(s.tasks[0].title, '<img src=x onerror=alert(1)>');
 });
 
+console.log('list dates and ordering');
+test('a dated list gives its undated tasks that day; a task date wins', () => {
+  const { s } = mk();
+  const day = L.newList(s, 'Friday plan', false, '2026-10-16');
+  const a = L.newTask(s, { listId: day.id, title: 'a', order: 1 });
+  const b = L.newTask(s, { listId: day.id, title: 'b', order: 2, dueDate: '2026-10-20' });
+  const E = L.dueMap(s);
+  assert.equal(E(a), '2026-10-16');
+  assert.equal(E(b), '2026-10-20');
+  assert.equal(L.dueOf(s, a), '2026-10-16');
+});
+test('subtasks follow the list date too', () => {
+  const { s } = mk();
+  const day = L.newList(s, 'Day', false, '2026-10-15');
+  const p = L.newTask(s, { listId: day.id, title: 'p', order: 1 });
+  L.newTask(s, { listId: day.id, parentId: p.id, title: 'k', order: 1 });
+  assert.equal(L.todayView(s).count, 2);
+});
+test('Today & overdue and the widget count a dated list (late, today, future)', () => {
+  const { s } = mk();
+  const past = L.newList(s, 'Past', false, '2026-10-10');
+  const now = L.newList(s, 'Now', false, '2026-10-15');
+  const later = L.newList(s, 'Later', false, '2026-10-30');
+  L.newTask(s, { listId: past.id, title: 'x', order: 1 });
+  L.newTask(s, { listId: now.id, title: 'y', order: 1 });
+  L.newTask(s, { listId: later.id, title: 'z', order: 1 });
+  const v = L.todayView(s);
+  assert.equal(v.past.length, 1); assert.equal(v.today.length, 1); assert.equal(v.count, 2);
+  const st = L.todayStats(s);
+  assert.equal(st.total, 2); assert.equal(st.overdue, 1);
+});
+test('completed tasks of a dated list do not stay overdue', () => {
+  const { s } = mk();
+  const past = L.newList(s, 'Past', false, '2026-10-10');
+  const t = L.newTask(s, { listId: past.id, title: 'x', order: 1 });
+  L.setCompleted(s, t.id, true);
+  assert.equal(L.todayView(s).count, 0);
+});
+test('due sort buckets use the list date', () => {
+  const { s } = mk();
+  const day = L.newList(s, 'Tomorrow', false, '2026-10-16'); day.sort = 'due';
+  L.newTask(s, { listId: day.id, title: 'x', order: 1 });
+  const v = L.listView(s, day);
+  assert.equal(v.sections.length, 1); assert.equal(v.sections[0].key, 'tomorrow');
+});
+test('an invalid list date is dropped, a valid one survives an export round trip', () => {
+  const { s } = mk();
+  const a = L.newList(s, 'A', false, '2026-11-02');
+  const b = L.newList(s, 'B'); b.dueDate = 'not-a-date';
+  const back = L.validateImport(JSON.parse(JSON.stringify(s)));
+  assert.equal(back.lists.find((l) => l.id === a.id).dueDate, '2026-11-02');
+  assert.equal(back.lists.find((l) => l.id === b.id).dueDate, null);
+});
+test('a bad date passed to newList is ignored', () => {
+  const { s } = mk();
+  assert.equal(L.newList(s, 'X', false, '31/12/2026').dueDate, null);
+});
+test('placing at the end keeps every existing task where it was', () => {
+  const { s, l } = mk();
+  const scope = (t) => t.listId === l.id;
+  ['a', 'b', 'c'].forEach((x) => task(s, l, x));
+  const before = L.topLevel(s.tasks, scope).map((t) => t.title);
+  const n = L.newTask(s, { listId: l.id, title: 'd' });
+  L.place(s.tasks, n, { scope });
+  assert.deepEqual(L.topLevel(s.tasks, scope).map((t) => t.title), [...before, 'd']);
+  L.normalize(s);
+  assert.deepEqual(L.topLevel(s.tasks, scope).map((t) => t.title), ['a', 'b', 'c', 'd']);
+});
+
 console.log(`\n${passed} passed${process.exitCode ? ', some FAILED' : ''}`);

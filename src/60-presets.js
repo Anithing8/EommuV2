@@ -236,6 +236,7 @@ function openCopyModal({ presetId, listId, date } = {}) {
   const checklist = h('div', { class: 'checklist', role: 'group', a: { 'aria-label': 'Tasks to copy' } });
   const countEl = h('span', {});
   const dateSeg = h('div', { class: 'seg', role: 'group', a: { 'aria-label': 'When' } });
+  let userPicked = !!date;   // once the person chooses a day, a dated list no longer suggests one
   const copyBtnLabel = () => {
     const n = p.items.filter((i) => !st.off.has(i.id)).length;
     countEl.textContent = `Copy ${n} item${n === 1 ? '' : 's'}`;
@@ -245,7 +246,7 @@ function openCopyModal({ presetId, listId, date } = {}) {
     dateSeg.replaceChildren(...[['today', 'Today'], ['tomorrow', 'Tomorrow'], ['pick', 'Pick a date']].map(([v, label]) => h('button', {
       type: 'button', class: st.choice === v ? 'on' : '', a: { 'aria-pressed': String(st.choice === v) },
       onclick: () => {
-        st.choice = v;
+        st.choice = v; userPicked = true;
         if (v === 'today') st.date = today; else if (v === 'tomorrow') st.date = L.addDays(today, 1);
         dateIn.value = st.date; dateIn.hidden = v !== 'pick'; drawDateSeg();
       },
@@ -271,14 +272,23 @@ function openCopyModal({ presetId, listId, date } = {}) {
   presetSel.addEventListener('change', () => {
     p = L.getPreset(S, presetSel.value); st.off = new Set();
     st.listId = p.targetListId; listSel.value = st.listId; st.mode = p.conflictMode; modeSel.value = st.mode;
-    drawChecklist(); copyBtnLabel();
+    followList(); drawChecklist(); copyBtnLabel();
   });
-  listSel.addEventListener('change', () => { st.listId = listSel.value; });
+  /** A list that is for one day suggests that day, unless the person already picked another. */
+  function followList() {
+    if (userPicked) return;
+    const ld = (L.getList(S, st.listId) || {}).dueDate;
+    const d = ld && ld >= today ? ld : today;
+    st.date = d;
+    st.choice = d === today ? 'today' : d === L.addDays(today, 1) ? 'tomorrow' : 'pick';
+    dateIn.value = d; dateIn.hidden = st.choice !== 'pick'; drawDateSeg();
+  }
+  listSel.addEventListener('change', () => { st.listId = listSel.value; followList(); });
   modeSel.addEventListener('change', () => { st.mode = modeSel.value; modeNote.textContent = modeHelp(st.mode); });
-  dateIn.addEventListener('change', () => { if (L.isDate(dateIn.value) && dateIn.value >= today) st.date = dateIn.value; else dateIn.value = st.date; });
+  dateIn.addEventListener('change', () => { userPicked = true; if (L.isDate(dateIn.value) && dateIn.value >= today) st.date = dateIn.value; else dateIn.value = st.date; });
   const modeNote = h('p', { class: 'help' }, modeHelp(st.mode));
   dateIn.hidden = st.choice !== 'pick';
-  drawDateSeg(); drawChecklist(); copyBtnLabel();
+  drawDateSeg(); followList(); drawChecklist(); copyBtnLabel();
 
   const body = h('div', { class: 'copy-form' },
     h('label', { class: 'fld' }, h('span', {}, 'Preset'), presetSel),

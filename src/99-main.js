@@ -29,6 +29,11 @@ document.addEventListener('keydown', (e) => {
     if (next) { next.tabIndex = 0; next.focus(); UI.focusId = next.dataset.id; next.scrollIntoView({ block: 'nearest' }); }
   } else if (key === ' ' && !isPreset) {
     e.preventDefault(); toggleDone(id);
+  } else if (key === 'Delete' && !isPreset) {
+    e.preventDefault();
+    const nextRow = rows[i + 1] || rows[i - 1];
+    if (nextRow) UI.focusId = nextRow.dataset.id;
+    removeTask(id);
   } else if ((key === 's' || key === 'S') && !isPreset) {
     e.preventDefault(); toggleStar(id);
   } else if (key === 's' || key === 'S') {

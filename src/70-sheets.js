@@ -23,9 +23,16 @@ function openTaskSheet(id, { focus } = {}) {
   const notes = h('textarea', { class: 'field', rows: 3, value: t.notes, placeholder: 'Notes. Links become clickable.', a: { 'aria-label': 'Notes' } });
   const date = h('input', { class: 'field', type: 'date', value: t.dueDate || '', a: { 'aria-label': 'Due date' } });
   const time = h('input', { class: 'field', type: 'time', value: t.dueTime || '', a: { 'aria-label': 'Clock time' } });
-  const clear = h('button', { class: 'linkbtn', type: 'button', onclick: () => { date.value = ''; time.value = ''; syncRepeat(); } }, 'Clear date and time');
-  time.addEventListener('change', () => { if (time.value && !date.value) date.value = today; });
+  const dateHint = h('p', { class: 'help' });
+  const syncHint = () => {
+    const ld = (L.getList(S, listSel.value) || {}).dueDate;
+    dateHint.hidden = !(ld && !date.value);
+    dateHint.textContent = ld ? `No date of its own, so this task follows its list: ${dateLabel(ld)}.` : '';
+  };
+  const clear = h('button', { class: 'linkbtn', type: 'button', onclick: () => { date.value = ''; time.value = ''; syncRepeat(); syncHint(); } }, 'Clear date and time');
   const listSel = listSelect(t.listId);
+  const dayFor = () => ((L.getList(S, listSel.value) || {}).dueDate) || today; // a dated list suggests its own day
+  time.addEventListener('change', () => { if (time.value && !date.value) date.value = dayFor(); });
   const star = switchBtn(t.isStarred, () => {}, 'Priority star');
   const srcLabel = h('input', { class: 'field', type: 'text', value: t.source ? t.source.label : '', maxLength: 120, placeholder: 'Label, e.g. Email from Priya', a: { 'aria-label': 'Source label' } });
   const srcUrl = h('input', { class: 'field', type: 'text', value: t.source ? t.source.url : '', placeholder: 'https://', inputMode: 'url', a: { 'aria-label': 'Source link' } });
@@ -53,7 +60,7 @@ function openTaskSheet(id, { focus } = {}) {
   }
   const unitEl = h('span', {});
   freq.addEventListener('change', () => {
-    if (freq.value !== 'none' && !date.value) date.value = today;
+    if (freq.value !== 'none' && !date.value) date.value = dayFor();
     if (freq.value === 'week' && !rs.weekdays.length && date.value) rs.weekdays = [L.weekday(date.value)];
     if (freq.value === 'week') { wk.replaceChildren(h('span', { class: 'fl' }, 'On'), dayPills(WEEK_MON_FIRST, rs.weekdays, (d) => { rs.weekdays = d; }, 'Repeat on weekdays')); }
     syncRepeat();
@@ -70,7 +77,7 @@ function openTaskSheet(id, { focus } = {}) {
     h('label', { class: 'fld' }, h('span', {}, 'Title'), title),
     h('label', { class: 'fld' }, h('span', {}, 'Notes'), notes),
     h('div', { class: 'fld' }, h('span', { class: 'fl' }, 'Due'),
-      h('div', { class: 'two' }, date, time), clear),
+      h('div', { class: 'two' }, date, time), clear, dateHint),
     sub ? h('p', { class: 'help' }, 'Subtasks follow their parent’s list and can’t repeat on their own.') : repBox,
     sub ? null : h('label', { class: 'fld' }, h('span', {}, 'List'), listSel),
     h('div', { class: 'fld row' }, h('span', { class: 'fl' }, 'Priority star'), star),
@@ -78,6 +85,8 @@ function openTaskSheet(id, { focus } = {}) {
       h('div', { class: 'two' }, srcLabel, srcUrl)));
   if (sub) repBox.hidden = true;
   syncRepeat();
+  date.addEventListener('input', syncHint); date.addEventListener('change', syncHint); listSel.addEventListener('change', syncHint);
+  syncHint();
 
   const dlg = openDialog({
     title: sub ? 'Subtask details' : 'Task details', body, cls: 'sheet',
@@ -92,8 +101,9 @@ function openTaskSheet(id, { focus } = {}) {
           if (srcUrl.value.trim() && !normalizeUrl(srcUrl.value)) { toast('That source link is not a web address.'); srcUrl.focus(); return false; }
           let dueDate = L.isDate(date.value) ? date.value : null;
           let dueTime = L.isTime(time.value) ? time.value : null;
-          if (dueTime && !dueDate) dueDate = today;
+          if (dueTime && !dueDate) dueDate = dayFor();
           if (!dueDate) dueTime = null;
+          if (!sub && freq.value !== 'none' && !dueDate) dueDate = dayFor();
           let recur = null;
           if (!sub && freq.value !== 'none') {
             const n = Math.max(1, Math.min(365, parseInt(every.value, 10) || 1));
@@ -108,7 +118,6 @@ function openTaskSheet(id, { focus } = {}) {
               weekdays: freq.value === 'week' ? (rs.weekdays.length ? rs.weekdays.slice() : [L.weekday(dueDate || today)]) : [],
               anchorDay: (freq.value === 'month' || freq.value === 'year') && dueDate ? L.parseDate(dueDate).getDate() : undefined,
             };
-            if (!dueDate) dueDate = today;
           }
           const src = srcUrl.value.trim() ? { label: srcLabel.value.trim(), url: normalizeUrl(srcUrl.value) } : null;
           t.title = v; t.notes = notes.value.slice(0, 4000); t.dueDate = dueDate; t.dueTime = dueTime; t.source = src;
@@ -123,7 +132,7 @@ function openTaskSheet(id, { focus } = {}) {
     ],
   });
   const fe = { date, time, repeat: freq, title }[focus] || title;
-  setTimeout(() => { fe.focus(); if (fe === title) title.select(); }, 30);
+  focusSoon(fe, fe === title);
   void dlg;
 }
 
@@ -156,14 +165,13 @@ function openCapture(prefill = {}) {
           dueDate, dueTime: dueDate && L.isTime(time.value) ? time.value : null,
           source: url.value.trim() ? { label: label.value.trim(), url: normalizeUrl(url.value) } : null,
         } });
-        UI.lastAdd[t.listId] = null;
         commit();
         toast(`Added to ${L.getList(S, t.listId).name}.`);
         if (t.dueTime) nudgeNotifications();
       },
     }],
   });
-  setTimeout(() => title.focus(), 30);
+  focusSoon(title);
 }
 
 /* ----- backup ----- */

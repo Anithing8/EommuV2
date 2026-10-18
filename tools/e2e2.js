@@ -24,7 +24,7 @@ const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0
     await page.mouse.move(a.x + a.width / 2 + 8, a.y + a.height / 2 + 8, { steps: 3 });
     const b = await page.locator(toSel).boundingBox();
     await page.mouse.move(b.x + b.width / 2, b.y + b.height * where, { steps: 10 });
-    await page.mouse.up();
+    await page.mouse.up(); await page.waitForTimeout(150);
     await page.waitForTimeout(80);
   };
 
@@ -115,7 +115,7 @@ const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0
 
   console.log('lists');
   await page.locator('.grp header .ibtn[aria-label="New list"]').click();
-  await page.locator('dialog input').fill('Errands');
+  await page.locator('dialog input[aria-label="List name"]').fill('Errands');
   await page.locator('dialog .key.primary').click();
   s = await st();
   const errands = s.lists.find((l) => l.name === 'Errands');

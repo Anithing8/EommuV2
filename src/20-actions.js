@@ -27,12 +27,8 @@ function addTask(listId, title, { parentId = null, afterId = null, props = {} } 
   } else if (parentId) {
     L.place(S.tasks, t, { parentId });
   } else {
-    // new tasks enter at the top, then each following one lands under the last you added
-    const prev = UI.lastAdd[t.listId] && $task(UI.lastAdd[t.listId]);
-    const tops = L.topLevel(S.tasks, scope).filter((x) => x !== t);
-    const beforeId = prev && !prev.parentId ? (tops[tops.findIndex((x) => x.id === prev.id) + 1] || {}).id : (tops[0] || {}).id;
-    L.place(S.tasks, t, { beforeId: beforeId || null, scope });
-    UI.lastAdd[t.listId] = t.id;
+    // one rule, always: a new task goes to the end of its list, so the order is the order you added them
+    L.place(S.tasks, t, { scope });
   }
   return t;
 }
@@ -136,10 +132,17 @@ function startSubtask(parentId) {
 function openNotes(id) { UI.notesOpen = id; render(); }
 
 /* ----- lists ----- */
-function addList(name) {
-  const l = L.newList(S, name);
+function addList(name, dueDate = null) {
+  const l = L.newList(S, name, false, dueDate);
   commit();
   return l;
+}
+/** Make a list "for a day" (or clear it). Its undated tasks then follow that date. */
+function setListDate(id, date) {
+  const l = L.getList(S, id);
+  if (!l) return;
+  l.dueDate = L.isDate(date) ? date : null;
+  commit();
 }
 function renameList(id, name) {
   const l = L.getList(S, id);

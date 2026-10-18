@@ -3,13 +3,13 @@
 
 const CAL_FIRST = 6, CAL_LAST = 22; // 06:00 to 22:00
 
-function calChip(t, today) {
+function calChip(t, today, E) {
   const l = L.getList(S, t.listId);
-  const late = !t.isCompleted && t.dueDate < today;
+  const late = !t.isCompleted && E(t) < today;
   const chip = h('div', {
-    class: `chip c${(l ? l.color : 0) % 6}${t.isCompleted ? ' done' : ''}${late ? ' late' : ''}${t.parentId ? ' sub' : ''}`,
+    class: `chip c${(l ? l.color : 0) % 6}${t.isCompleted ? ' done' : ''}${late ? ' late' : ''}${t.parentId ? ' sub' : ''}${t.dueDate ? '' : ' inh'}`,
     dataset: { id: t.id, drag: 'chip' }, tabIndex: 0, role: 'button',
-    title: `${t.title}${l ? ' – ' + l.name : ''}`,
+    title: `${t.title}${l ? ' – ' + l.name : ''}${t.dueDate ? '' : ' (date from the list)'}`,
     onclick: (e) => { if (!e.target.closest('.check')) openTaskSheet(t.id); },
     onkeydown: (e) => { if (e.key === 'Enter' && e.target === chip) { e.preventDefault(); openTaskSheet(t.id); } },
   },
@@ -42,7 +42,8 @@ function calendarView() {
   const step = mode === 'week' ? 7 : 1;
   const go = (d) => { UI.cal.date = d; render(); };
 
-  const dated = S.tasks.filter((t) => t.dueDate && days.includes(t.dueDate));
+  const E = L.dueMap(S); // a task's own date, else the date of its list
+  const dated = S.tasks.filter((t) => E(t) && days.includes(E(t)));
   const cmp = (a, b) => (a.dueTime || '').localeCompare(b.dueTime || '') || a.order - b.order;
 
   const dayHead = days.map((d) => {
@@ -61,15 +62,15 @@ function calendarView() {
     dayHead,
     h('div', { class: 'gut ad-label' }, 'All day'),
     days.map((d) => h('div', { class: `allday${d === today ? ' today' : ''}`, dataset: { date: d } },
-      dated.filter((t) => t.dueDate === d && !t.dueTime).sort(cmp).map((t) => calChip(t, today)))));
+      dated.filter((t) => E(t) === d && !t.dueTime).sort(cmp).map((t) => calChip(t, today, E)))));
 
   const body = h('div', { class: 'cal-body', style: { gridTemplateColumns: cols } });
   const nowHM = L.nowHM();
   for (let hr = CAL_FIRST; hr <= CAL_LAST; hr++) {
     body.append(h('div', { class: 'gut hr', dataset: { hour: hr } }, h('span', {}, `${L.pad(hr)}:00`)));
     days.forEach((d) => {
-      const inHour = dated.filter((t) => t.dueDate === d && t.dueTime && Math.min(CAL_LAST, Math.max(CAL_FIRST, parseInt(t.dueTime, 10))) === hr).sort(cmp);
-      const slot = h('div', { class: `slot${d === today ? ' today' : ''}`, dataset: { date: d, hour: hr } }, inHour.map((t) => calChip(t, today)));
+      const inHour = dated.filter((t) => E(t) === d && t.dueTime && Math.min(CAL_LAST, Math.max(CAL_FIRST, parseInt(t.dueTime, 10))) === hr).sort(cmp);
+      const slot = h('div', { class: `slot${d === today ? ' today' : ''}`, dataset: { date: d, hour: hr } }, inHour.map((t) => calChip(t, today, E)));
       if (d === today && parseInt(nowHM, 10) === hr) {
         slot.append(h('div', { class: 'nowline', style: { top: `${(parseInt(nowHM.slice(3), 10) / 60) * 100}%` }, title: `Now, ${timeLabel(nowHM)}` }));
       }
